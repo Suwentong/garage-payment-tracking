@@ -8,6 +8,7 @@ from datetime import datetime
 import uuid
 
 from app.services.file_reader_service import FileReaderService
+from app.services.payment_tracker_service import PaymentTrackerService
 
 router = APIRouter()
 
@@ -55,23 +56,43 @@ async def generate_report(
 
         try:
             # Initialize file reader service
-            service = FileReaderService()
+            file_service = FileReaderService()
 
             # Read and process files
-            rent_df = service.read_rent_file(rent_temp_path)
-            bank_df = service.read_bank_statement_file(bank_temp_path)
+            file_service.read_rent_file(rent_temp_path)
+            file_service.read_bank_statement_file(bank_temp_path)
 
-            processed_rent = service.process_rent_data()
-            processed_bank = service.process_bank_statement_data()
+            processed_rent = file_service.process_rent_data()
+            processed_bank = file_service.process_bank_statement_data()
 
-            # Generate report
+            # Initialize payment tracker service
+            tracker_service = PaymentTrackerService()
+            tracker_service.set_data(processed_rent, processed_bank)
+
+            # Generate payment status report
+            payment_report = tracker_service.generate_payment_report()
+
+            # Generate final report
             report_id = str(uuid.uuid4())
             report_path = Path(f"/tmp/payment_report_{report_id}.xlsx")
 
-            # Create simple report with processed data
+            # Export comprehensive report
             with pd.ExcelWriter(report_path, engine="openpyxl") as writer:
-                processed_rent.to_excel(writer, sheet_name="Rent Data", index=False)
-                processed_bank.to_excel(writer, sheet_name="Bank Data", index=False)
+                # Payment status report (main sheet)
+                payment_report.to_excel(
+                    writer, sheet_name="Отчет по платежам", index=False
+                )
+
+                # Summary statistics
+                summary = tracker_service.get_payment_summary()
+                summary_df = pd.DataFrame([summary])
+                summary_df.to_excel(writer, sheet_name="Сводка", index=False)
+
+                # Original processed data (for reference)
+                processed_rent.to_excel(writer, sheet_name="Данные аренды", index=False)
+                processed_bank.to_excel(
+                    writer, sheet_name="Банковские данные", index=False
+                )
 
             # Return the file
             return FileResponse(
