@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Отслеживание оплат гаражей</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px dashed #ddd;
+            border-radius: 5px;
+            background-color: #fafafa;
+        }
+        input[type="file"]:hover {
+            border-color: #007bff;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            margin-top: 20px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.loading {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .file-info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        .instructions {
+            background-color: #e7f3ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
+        .instructions h3 {
+            margin-top: 0;
+            color: #007bff;
+        }
+        .instructions ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚗 Отслеживание оплат гаражей</h1>
+
+        <div class="instructions">
+            <h3>Инструкции:</h3>
+            <ul>
+                <li>Загрузите файл аренды</li>
+                <li>Загрузите файл банковской выписки</li>
+                <li>Нажмите "Создать отчёт"</li>
+                <li>Загрузка отчёта начнётся автоматически</li>
+            </ul>
+        </div>
+
+        <form id="uploadForm">
+            <div class="form-group">
+                <label for="rentFile">Файл аренды (Excel формат):</label>
+                <input type="file" id="rentFile" name="rent_file" accept=".xlsx,.xls" required>
+                <div class="file-info" id="rentFileInfo"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="bankFile">Файл банковской выписки (Excel формат):</label>
+                <input type="file" id="bankFile" name="bank_statement_file" accept=".xlsx,.xls" required>
+                <div class="file-info" id="bankFileInfo"></div>
+            </div>
+
+            <button type="submit" id="submitBtn">Создать отчёт</button>
+        </form>
+
+        <div id="status" class="status"></div>
+    </div>
+
+    <script>
+        const API_URL = '/api/v1/generate';
+
+        // File info display
+        document.getElementById('rentFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            const infoDiv = document.getElementById('rentFileInfo');
+            if (file) {
+                infoDiv.textContent = `Выбрано: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+            } else {
+                infoDiv.textContent = '';
+            }
+        });
+
+        document.getElementById('bankFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            const infoDiv = document.getElementById('bankFileInfo');
+            if (file) {
+                infoDiv.textContent = `Выбрано: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+            } else {
+                infoDiv.textContent = '';
+            }
+        });
+
+        // Form submission
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const rentFile = document.getElementById('rentFile').files[0];
+            const bankFile = document.getElementById('bankFile').files[0];
+            const submitBtn = document.getElementById('submitBtn');
+            const statusDiv = document.getElementById('status');
+            
+            if (!rentFile || !bankFile) {
+                showStatus('Пожалуйста, выберите оба файла', 'error');
+                return;
+            }
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Обработка...';
+            showStatus('Загрузка файлов и создание отчета...', 'loading');
+            
+            try {
+                const formData = new FormData();
+                formData.append('rent_file', rentFile);
+                formData.append('bank_statement_file', bankFile);
+                
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    // Get the filename from the response headers
+                    const contentDisposition = response.headers.get('content-disposition');
+                    let filename = 'payment_report.xlsx';
+                    if (contentDisposition) {
+                        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+                        if (filenameMatch) {
+                            filename = filenameMatch[1];
+                        }
+                    }
+                    
+                    // Download the file
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    showStatus('Отчёт успешно создан! Файл загружен.', 'success');
+                } else {
+                    const errorData = await response.json();
+                    showStatus(`Ошибка: ${errorData.detail || 'Не удалось создать отчёт'}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showStatus(`Ошибка: ${error.message}`, 'error');
+            } finally {
+                // Reset button state
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Создать отчёт';
+            }
+        });
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = 'block';
+
+            // Auto-hide success messages after 5 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusDiv.style.display = 'none';
+                }, 5000);
+            }
+        }
+    </script>
+</body>
+</html>
